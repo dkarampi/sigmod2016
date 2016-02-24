@@ -6,9 +6,9 @@
 #define FALSE 0
 #define TRUE !FALSE
 
-#define BUF_LEN		128
-#define MAX_V		(1 << 21) /* ~2M vertices */
-#define E_PER_EPAGE	14
+#define BUF_LEN			128
+#define MAX_V			(1 << 21) /* ~2M vertices */
+#define EDGES_PER_EPAGE	13
 
 typedef	uint32_t vid_t;
 
@@ -18,7 +18,7 @@ typedef struct e_page
 	struct e_page *next;
 
 	/* vertex ids correspoding to each outgoing edge */
-	vid_t vid[E_PER_EPAGE];
+	vid_t vid[EDGES_PER_EPAGE];
 } e_page_t;
 
 typedef struct graph
@@ -27,7 +27,7 @@ typedef struct graph
 	uint32_t num_v;
 } graph_t;
 
-graph_t *graph_create(const uint32_t n)
+graph_t * graph_create(const uint32_t n)
 {
 	graph_t *g;
 	
@@ -57,14 +57,28 @@ void graph_destroy(graph_t *g)
 	g = NULL;
 }
 
+/* Allocate space for an e_page_t object and add an initial vertex to it */
+e_page_t * create_page_with_vertex(vid_t v)
+{
+	e_page_t *p;
+	if ((p = malloc(sizeof(e_page_t))) == NULL) {
+		perror("malloc");
+		exit(EXIT_FAILURE);
+	}
+	p->vid[0] = v;
+	p->num_e = 1;
+	p->next = NULL;
+
+	return p;
+}
+
+
 void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 {
-	e_page_t *edges = g->v[v1];
-
 	/* Check if edge exists already. XXX Consider removing this step. */
-	for (e_page_t *p = edges; p != NULL; p = p->next) {
-		/* Iterate over all outgoing edges of this page */
-		for (int i = 0; i < p->num_e; i++) {
+	for (e_page_t *p = g->v[v1]; p != NULL; p = p->next) {
+		/* Iterate over all outgoing edges of this page. */
+		for (uint32_t i = 0; i < p->num_e; i++) {
 			if (p->vid[i] == v2) {
 				fprintf(stdout, "edge %" PRIu32
 						" --> %" PRIu32 " exists already\n", v1, v2);
@@ -74,22 +88,26 @@ void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 		p = p->next;
 	}
 
-	if (edges == NULL) {
-		/* v1 has no outgoing edges, add a new page */
-		e_page_t *p;
-		if ((p = malloc(sizeof(e_page_t))) == NULL) {
-			perror("malloc");
-			exit(EXIT_FAILURE);
-		}
-		p->vid[0] = v2;
-		p->num_e = 1;
-		p->next = NULL;
-		g->v[v1].edges = p;
+	if (g->v[v1] == NULL) {
+		/* v1 has no outgoing edges, add a new page. */
+		g->v[v1] = create_page_with_vertex(v2);
 		return;
 	}
 
-	e_page_t *p = NULL;
-	// if there is no empty spot, create a new page
+	e_page_t *p = g->v[v1];
+	while (p->num_e == EDGES_PER_EPAGE && p->next != NULL)
+		p = p->next;
+	/* 
+	 * Reached the final page where either there is space to add
+	 * one more edge, or there is no and another page must be added.
+	 */
+	if (p->num_e == EDGES_PER_EPAGE) {
+		p->next = create_page_with_vertex(v2);
+		return;
+	}
+
+	p->vid[p->num_e++] = v2;
+	return;
 }
 
 int main(void)
@@ -97,22 +115,27 @@ int main(void)
 	graph_t *g = graph_create(MAX_V);
 	char buf[BUF_LEN];
 
+
 	FILE *fp = fopen("init-file.txt", "r");
 	if (fp == NULL) {
 		perror("fopen");
 		exit(EXIT_FAILURE);
 	}
 
-	int cnt = 0;
     while (fgets(buf, sizeof(buf), fp) != NULL) {
-		vid_t vid1, vid2;
+		vid_t v1, v2;
 		char *p;
-		vid1 = strtoul(buf, &p, 10);
+		v1 = strtoul(buf, &p, 10);
 		++p;
-		vid2 = strtoul(p, NULL, 10);
+		v2 = strtoul(p, NULL, 10);
+		graph_add_edge(g, v1, v2);
     }
 
 	return 0;
 }
 
+
+// NOTES:
+// When adding a new page, I should maybe prepend it to the rest instead of
+// appending it. This should be decided based on the additions/deletions ratio.
 // http://www.cs.yale.edu/homes/aspnes/pinewiki/C(2f)Graphs.html

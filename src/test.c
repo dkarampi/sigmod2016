@@ -21,7 +21,7 @@ graph_t *graph_create(int n)
 {
 	int i;
 	graph_t *g;
-	
+
 	if ((g = malloc(sizeof(graph_t))) == NULL) {
 		perror("malloc");
 		exit(EXIT_FAILURE);
