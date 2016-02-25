@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <assert.h>
 
 #define FALSE 0
 #define TRUE !FALSE
@@ -24,7 +25,7 @@ typedef struct e_page
 typedef struct graph
 {
 	e_page_t **v; /* each vertex points to a page of edges */
-	uint32_t num_v;
+	uint32_t num_v; /* XXX Do I need this ? If yes, update when changed */
 } graph_t;
 
 graph_t * graph_create(const uint32_t n)
@@ -85,7 +86,6 @@ void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 				return;
 			}
 		}
-		p = p->next;
 	}
 
 	if (g->v[v1] == NULL) {
@@ -110,6 +110,18 @@ void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 	return;
 }
 
+/* For testing. */
+uint32_t num_outgoing_edges(graph_t *g, vid_t v)
+{
+	uint32_t num_e = 0; /* Total number of outgoing edges */
+	for (e_page_t *p = g->v[v]; p != NULL; p = p->next)
+		num_e += p->num_e;
+
+	return num_e;
+}
+
+
+
 int main(void)
 {
 	graph_t *g = graph_create(MAX_V);
@@ -130,6 +142,23 @@ int main(void)
 		v2 = strtoul(p, NULL, 10);
 		graph_add_edge(g, v1, v2);
     }
+
+#ifdef DEBUG
+	/* Do some sanity checks */
+	assert(num_outgoing_edges(g, 1) == 46473);
+	assert(num_outgoing_edges(g, 11) == 8);
+	assert(num_outgoing_edges(g, 111) == 0);
+	assert(num_outgoing_edges(g, 1111) == 0);
+	assert(num_outgoing_edges(g, 11111) == 0);
+	assert(num_outgoing_edges(g, 111111) == 2);
+	assert(num_outgoing_edges(g, 1111111) == 1);
+	assert(num_outgoing_edges(g, 7) == 323);
+	assert(num_outgoing_edges(g, 77) == 14);
+	assert(num_outgoing_edges(g, 777) == 0);
+	assert(num_outgoing_edges(g, 999) == 82);
+	assert(num_outgoing_edges(g, 9999) == 82);
+	fprintf(stdout, "Successfully passed all tests\n");
+#endif
 
 	return 0;
 }
