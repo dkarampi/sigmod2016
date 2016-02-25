@@ -18,14 +18,14 @@ typedef struct e_page
 	uint32_t num_e;
 	struct e_page *next;
 
-	/* vertex ids correspoding to each outgoing edge */
+	/* vertex ids correspoding to each outgoing edge. */
 	vid_t vid[EDGES_PER_EPAGE];
 } e_page_t;
 
 typedef struct graph
 {
-	e_page_t **v; /* each vertex points to a page of edges */
-	uint32_t num_v; /* XXX Do I need this ? If yes, update when changed */
+	e_page_t **v; /* Each vertex points to a page of edges. */
+	uint32_t num_v; /* XXX Do I need this ? If yes, update when changed. */
 } graph_t;
 
 graph_t * graph_create(const uint32_t n)
@@ -58,7 +58,7 @@ void graph_destroy(graph_t *g)
 	g = NULL;
 }
 
-/* Allocate space for an e_page_t object and add an initial vertex to it */
+/* Allocate space for an e_page_t object and add an initial vertex to it. */
 e_page_t * create_page_with_vertex(vid_t v)
 {
 	e_page_t *p;
@@ -94,12 +94,17 @@ void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 		return;
 	}
 
+	/* 
+	 * XXX Does it make any sense to prepend the list with empty pages when
+	 * needed instead of appending them ?
+	 */
+
 	e_page_t *p = g->v[v1];
 	while (p->num_e == EDGES_PER_EPAGE && p->next != NULL)
 		p = p->next;
 	/* 
-	 * Reached the final page where either there is space to add
-	 * one more edge, or there is no and another page must be added.
+	 * At this point, we 've either reached the last page and all pages are
+	 * full, or we 're somewhere in between the chain and found an empty slot.
 	 */
 	if (p->num_e == EDGES_PER_EPAGE) {
 		p->next = create_page_with_vertex(v2);
@@ -110,10 +115,26 @@ void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 	return;
 }
 
-/* For testing. */
+void graph_del_edge(graph_t *g, vid_t v1, vid_t v2)
+{
+	// check the first and maintain a pointer to the previous
+	
+
+	for (e_page_t *p = g->v[v1]; p != NULL; p = p->next) {
+		/* Iterate over all outgoing edges of this page. */
+		for (uint32_t i = 0; i < p->num_e; i++) {
+			if (p->vid[i] == v2) {
+
+				return;
+			}
+		}
+	}
+}
+
+/* For testing */
 uint32_t num_outgoing_edges(graph_t *g, vid_t v)
 {
-	uint32_t num_e = 0; /* Total number of outgoing edges */
+	uint32_t num_e = 0; /* total number of outgoing edges */
 	for (e_page_t *p = g->v[v]; p != NULL; p = p->next)
 		num_e += p->num_e;
 
@@ -144,7 +165,7 @@ int main(void)
     }
 
 #ifdef DEBUG
-	/* Do some sanity checks */
+	/* Sanity checks */
 	assert(num_outgoing_edges(g, 1) == 46473);
 	assert(num_outgoing_edges(g, 11) == 8);
 	assert(num_outgoing_edges(g, 111) == 0);
