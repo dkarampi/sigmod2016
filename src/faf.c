@@ -2,14 +2,13 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <stdbool.h>
 #include <assert.h>
 
-#define FALSE 0
-#define TRUE !FALSE
 
 #define BUF_LEN			128
 #define MAX_V			(1 << 21) /* ~2M vertices */
-#define EDGES_PER_EPAGE	13
+#define EDGES_PER_EPAGE	128
 
 typedef	uint32_t vid_t;
 
@@ -117,18 +116,23 @@ void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 
 void graph_del_edge(graph_t *g, vid_t v1, vid_t v2)
 {
-	// check the first and maintain a pointer to the previous
-	
-
+	/* 
+	 * Current implementation allows pages with 0 edges on them. We don't
+	 * free() empty pages neither move edges from one page to the other, yet
+	 * we make sure each page is not fragmented (empty slots)
+	 */
 	for (e_page_t *p = g->v[v1]; p != NULL; p = p->next) {
-		/* Iterate over all outgoing edges of this page. */
 		for (uint32_t i = 0; i < p->num_e; i++) {
 			if (p->vid[i] == v2) {
-
+				/* replace the current edge with the last one */
+				p->vid[i] = p->vid[p->num_e-1];
+				p->num_e--;
 				return;
 			}
 		}
 	}
+
+	return;
 }
 
 /* For testing */
@@ -148,8 +152,7 @@ int main(void)
 	graph_t *g = graph_create(MAX_V);
 	char buf[BUF_LEN];
 
-
-	FILE *fp = fopen("init-file.txt", "r");
+	FILE *fp = fopen("/dev/shm/init-file.txt", "r");
 	if (fp == NULL) {
 		perror("fopen");
 		exit(EXIT_FAILURE);
@@ -178,6 +181,23 @@ int main(void)
 	assert(num_outgoing_edges(g, 777) == 0);
 	assert(num_outgoing_edges(g, 999) == 82);
 	assert(num_outgoing_edges(g, 9999) == 82);
+	assert(num_outgoing_edges(g, 2) == 18951);
+	assert(num_outgoing_edges(g, 16964) == 10042);
+	assert(num_outgoing_edges(g, 44275) == 4073);
+	assert(num_outgoing_edges(g, 105898) == 5365);
+	assert(num_outgoing_edges(g, 112128) == 1924);
+	graph_del_edge(g, 16964, 383147);
+	graph_del_edge(g, 16964, 106326);
+	graph_del_edge(g, 16964, 106506);
+	graph_del_edge(g, 16964, 383071);
+	graph_del_edge(g, 16964, 107111);
+	graph_del_edge(g, 16964, 103629);
+	graph_del_edge(g, 16964, 106259);
+	graph_del_edge(g, 16964, 106958);
+	graph_del_edge(g, 16964, 110050);
+	graph_del_edge(g, 16964, 108742);
+	graph_del_edge(g, 16964, 383095);
+	assert(num_outgoing_edges(g, 16964) == 10031);
 	fprintf(stdout, "Successfully passed all tests\n");
 #endif
 
