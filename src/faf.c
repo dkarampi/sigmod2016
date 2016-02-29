@@ -12,6 +12,7 @@
 
 typedef	uint32_t vid_t;
 
+/* TODO: Consider using a vector instead of pages */
 typedef struct e_page
 {
 	uint32_t num_e;
@@ -145,6 +146,47 @@ uint32_t num_outgoing_edges(graph_t *g, vid_t v)
 	return num_e;
 }
 
+/* Hashtable: key->int, value->char (ignore this in our case */
+KHASH_MAP_INIT_INT(32, char) 
+int shortest_path_distance(graph_t *g, vid_t src, vid_t dest)
+{
+	/* bfs */
+	if (src == dest)
+		return 0;
+
+	/* 
+	 * OPT:
+	 * - store pointers instead of vids (?)
+	 * - use bitmap instead of hastable (?)
+	 */
+	int ignore1, is_missing;
+	khash_t(32) *h = kh_init(32);
+
+	kvec_t(vid_t) queue; 
+	kvec_init(queue);
+	kv_push(vid_t, queue, src);
+	int head = 0;	/* head idx */
+	//insert in ht
+	int dist = 0;
+	while (head < kv_max(queue)) {
+		++dist;
+		int len = kv_max(queue) - head;
+		for (int i = 0; i < len; i++) {
+			vid_t v = kv_A(queue, head); /* dequeue */
+			++head;
+			/* TODO: implement an iterator over all outgoing edges */
+			for (epage_t *p = g->v[v]; p != NULL; p = p->next) {
+				for (uint32_t k = 0; k < p->num_e; k++) {
+					// check if any of the nodes corresponds to dest
+					// if yes, return dist
+					// else, check if in hashtable, if not, enqueue
+				}
+			}
+		}
+	}
+
+	// TODO: destroy ht & queue
+}
 
 
 int main(void)
