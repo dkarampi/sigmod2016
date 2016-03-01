@@ -5,10 +5,13 @@
 #include <stdbool.h>
 #include <assert.h>
 
+#include "khash.h"
+#include "kvec.h"
 
 #define BUF_LEN			128
 #define MAX_V			(1 << 21) /* ~2M vertices */
 #define EDGES_PER_EPAGE	128
+
 
 typedef	uint32_t vid_t;
 
@@ -147,7 +150,7 @@ uint32_t num_outgoing_edges(graph_t *g, vid_t v)
 }
 
 /* Hashtable: key->int, value->char (ignore this in our case */
-KHASH_MAP_INIT_INT(32, char) 
+KHASH_MAP_INIT_INT(32, char)
 int shortest_path_distance(graph_t *g, vid_t src, vid_t dest)
 {
 	/* bfs */
@@ -159,14 +162,16 @@ int shortest_path_distance(graph_t *g, vid_t src, vid_t dest)
 	 * - store pointers instead of vids (?)
 	 * - use bitmap instead of hastable (?)
 	 */
-	int ignore1, is_missing;
-	khash_t(32) *h = kh_init(32);
-
+	int ignore, not_visited;
 	kvec_t(vid_t) queue; 
-	kvec_init(queue);
+	kv_init(queue);
 	kv_push(vid_t, queue, src);
-	int head = 0;	/* head idx */
-	//insert in ht
+	uint32_t head = 0;	/* head idx */
+	khiter_t k = 0;
+	k = k; /* XXX why does it complain ? */
+	khash_t(32) *h = kh_init(32);
+	kh_put(32, h, src, &ignore); /* ignore also the return value */
+
 	int dist = 0;
 	while (head < kv_max(queue)) {
 		++dist;
@@ -175,17 +180,24 @@ int shortest_path_distance(graph_t *g, vid_t src, vid_t dest)
 			vid_t v = kv_A(queue, head); /* dequeue */
 			++head;
 			/* TODO: implement an iterator over all outgoing edges */
-			for (epage_t *p = g->v[v]; p != NULL; p = p->next) {
+			for (e_page_t *p = g->v[v]; p != NULL; p = p->next) {
 				for (uint32_t k = 0; k < p->num_e; k++) {
-					// check if any of the nodes corresponds to dest
-					// if yes, return dist
-					// else, check if in hashtable, if not, enqueue
+					uint32_t u = p->vid[k];
+					if (u == dest)
+						return dist;
+					/* Check if node has been visited in past */
+					k = kh_get(32, h, u);
+					not_visited = (k == kh_end(h));
+					if (not_visited)
+						kh_put(32, h, u, &ignore);
 				}
 			}
 		}
 	}
 
-	// TODO: destroy ht & queue
+	kh_destroy(32, h);
+	kv_destroy(queue);
+	return -1;
 }
 
 
