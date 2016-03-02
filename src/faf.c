@@ -151,7 +151,7 @@ uint32_t num_outgoing_edges(graph_t *g, vid_t v)
 
 /* Hashtable: key->int, value->char (ignore this in our case */
 KHASH_MAP_INIT_INT(32, char)
-int shortest_path_distance(graph_t *g, vid_t src, vid_t dest)
+int shortest_path_length(graph_t *g, vid_t src, vid_t dest)
 {
 	/* bfs */
 	if (src == dest)
@@ -206,6 +206,7 @@ int main(void)
 	graph_t *g = graph_create(MAX_V);
 	char buf[BUF_LEN];
 
+	/* Exec before run: cp init-file.txt to /dev/shm */
 	FILE *fp = fopen("/dev/shm/init-file.txt", "r");
 	if (fp == NULL) {
 		perror("fopen");
@@ -220,9 +221,46 @@ int main(void)
 		v2 = strtoul(p, NULL, 10);
 		graph_add_edge(g, v1, v2);
     }
+/*
+	vid_t v1, v2;
+	char *p;
+	while (fgets(buf, sizeof(buf), fp) != NULL) {
+		switch (buf[0]) {
+			case 'Q':
+				v1 = strtoul(buf+2, &p, 10);
+				++p;
+				v2 = strtoul(p, NULL, 10);
+				shortest_path_distance(g, v1, v2);	
+				break;
+			case 'A':
+				v1 = strtoul(buf+2, &p, 10);
+				++p;
+				v2 = strtoul(p, NULL, 10);
+				shortest_path_distance(g, v1, v2);	
+				break;
+			case 'D':
+				v1 = strtoul(buf+2, &p, 10);
+				++p;
+				v2 = strtoul(p, NULL, 10);
+				shortest_path_distance(g, v1, v2);	
+				break;
+			default:
+				fprintf(stderr, "Unsupported operation. Exiting...\n");
+				exit(EXIT_FAILURE);
+		}
+	}
+*/
 
 #ifdef DEBUG
 	/* Sanity checks */
+	uint32_t src[] = { 340279, 1445297, 1151721, 309345, 822018 };
+	uint32_t dest[] = { 519122, 146499, 401121, 696543, 458677 };
+
+	for (int i = 0; i < 5; i++) {
+		int dist = shortest_path_length(g, src[i], dest[i]);
+		assert(dist == -1);
+	}
+
 	assert(num_outgoing_edges(g, 1) == 46473);
 	assert(num_outgoing_edges(g, 11) == 8);
 	assert(num_outgoing_edges(g, 111) == 0);
