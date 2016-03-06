@@ -28,7 +28,9 @@ typedef struct e_page
 typedef struct graph
 {
 	e_page_t **v; /* Each vertex points to a page of edges. */
-	uint32_t num_v; /* XXX Do I need this ? If yes, update when changed. */
+
+	/* This counter is not maintained properly */
+	uint32_t num_v;
 } graph_t;
 
 graph_t * graph_create(const uint32_t n)
@@ -45,6 +47,7 @@ graph_t * graph_create(const uint32_t n)
 		exit(EXIT_FAILURE);
 	}
 
+	/* TODO: calloc */
 	for (uint32_t i = 0; i < n; i++)
 		g->v[i] = NULL;
 	g->num_v = 0;
@@ -54,9 +57,15 @@ graph_t * graph_create(const uint32_t n)
 
 void graph_destroy(graph_t *g)
 {
-	for (uint32_t i = 0; i < g->num_v; i++)
-		free(g->v[i]);
-	free(g->v);
+	for (uint32_t i = 0; i < MAX_V; i++) {
+		e_page_t *p, *q;
+		for (p = q = g->v[i]; p != NULL; ) {
+			p = p->next;
+			free(q);
+			q = p;
+		}
+		g->v[i] = NULL; 
+	}
 	free(g);
 	g = NULL;
 }
@@ -84,8 +93,10 @@ void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 		/* Iterate over all outgoing edges of this page. */
 		for (uint32_t i = 0; i < p->num_e; i++) {
 			if (p->vid[i] == v2) {
+/*					
 				fprintf(stdout, "edge %" PRIu32
 						" --> %" PRIu32 " exists already\n", v1, v2);
+*/						
 				return;
 			}
 		}
@@ -94,6 +105,7 @@ void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 	if (g->v[v1] == NULL) {
 		/* v1 has no outgoing edges, add a new page. */
 		g->v[v1] = create_page_with_vertex(v2);
+		g->num_v++;
 		return;
 	}
 
@@ -167,18 +179,15 @@ int shortest_path_length(graph_t *g, vid_t src, vid_t dest)
 	kv_init(queue);
 	kv_push(vid_t, queue, src);
 	uint32_t head = 0;	/* head idx */
-	khiter_t k = 0;
-	k = k; /* XXX why does it complain ? */
 	khash_t(32) *h = kh_init(32);
-	kh_put(32, h, src, &ignore); /* ignore also the return value */
+	kh_put(32, h, src, &ignore); /* ignore the return value as well */
 
 	int dist = 0;
-	while (head < kv_max(queue)) {
+	while (head < kv_size(queue)) {
 		++dist;
-		int len = kv_max(queue) - head;
-		for (int i = 0; i < len; i++) {
-			vid_t v = kv_A(queue, head); /* dequeue */
-			++head;
+		uint32_t size = kv_size(queue);
+		for (; head < size; head++) {
+			vid_t v = kv_A(queue, head); /* "dequeue" */
 			/* TODO: implement an iterator over all outgoing edges */
 			for (e_page_t *p = g->v[v]; p != NULL; p = p->next) {
 				for (uint32_t k = 0; k < p->num_e; k++) {
@@ -186,10 +195,12 @@ int shortest_path_length(graph_t *g, vid_t src, vid_t dest)
 					if (u == dest)
 						return dist;
 					/* Check if node has been visited in past */
-					k = kh_get(32, h, u);
-					not_visited = (k == kh_end(h));
-					if (not_visited)
+					khiter_t iter = kh_get(32, h, u);
+					not_visited = (iter == kh_end(h));
+					if (not_visited) { /* enqueue and hash */
+						kv_push(vid_t, queue, u);
 						kh_put(32, h, u, &ignore);
+					}
 				}
 			}
 		}
@@ -201,58 +212,79 @@ int shortest_path_length(graph_t *g, vid_t src, vid_t dest)
 }
 
 
+void graph_dump(const graph_t * const g, const char *fname)
+{
+	FILE *fp;
+	if ((fp = fopen(fname, "w")) == NULL) {
+    	perror("fopen");
+		exit(EXIT_FAILURE);
+	}
+
+	for (uint32_t i = 0; i < MAX_V; i++) {
+		for (e_page_t *p = g->v[i]; p != NULL; p = p->next) {
+			for (uint32_t j = 0; j < p->num_e; j++) {
+				fprintf(fp, "%u\t%u\n", i, p->vid[j]);
+			}
+		}
+	}
+
+	fclose(fp);
+}
+
+
 int main(void)
 {
 	graph_t *g = graph_create(MAX_V);
 	char buf[BUF_LEN];
 
-	/* Exec before run: cp init-file.txt to /dev/shm */
-	FILE *fp = fopen("/dev/shm/init-file.txt", "r");
-	if (fp == NULL) {
-		perror("fopen");
-		exit(EXIT_FAILURE);
-	}
+	vid_t v1, v2;
+	char *p;
 
-    while (fgets(buf, sizeof(buf), fp) != NULL) {
-		vid_t v1, v2;
-		char *p;
+	/* Read the initial graph */
+    while (fgets(buf, sizeof(buf), stdin) != NULL) {
+		if (buf[0] == 'S')
+			break;
 		v1 = strtoul(buf, &p, 10);
 		++p;
 		v2 = strtoul(p, NULL, 10);
 		graph_add_edge(g, v1, v2);
     }
-/*
-	vid_t v1, v2;
-	char *p;
-	while (fgets(buf, sizeof(buf), fp) != NULL) {
+
+	/* Fire up the workload! */
+	fprintf(stdout, "R\n");
+	while (fgets(buf, sizeof(buf), stdin) != NULL) {
 		switch (buf[0]) {
-			case 'Q':
-				v1 = strtoul(buf+2, &p, 10);
-				++p;
-				v2 = strtoul(p, NULL, 10);
-				shortest_path_distance(g, v1, v2);	
-				break;
 			case 'A':
 				v1 = strtoul(buf+2, &p, 10);
 				++p;
 				v2 = strtoul(p, NULL, 10);
-				shortest_path_distance(g, v1, v2);	
+				graph_add_edge(g, v1, v2);	
 				break;
 			case 'D':
 				v1 = strtoul(buf+2, &p, 10);
 				++p;
 				v2 = strtoul(p, NULL, 10);
-				shortest_path_distance(g, v1, v2);	
+				graph_del_edge(g, v1, v2);	
+				break;
+			case 'Q':
+				v1 = strtoul(buf+2, &p, 10);
+				++p;
+				v2 = strtoul(p, NULL, 10);
+				int dist = shortest_path_length(g, v1, v2);
+				fprintf(stdout, "%d\n", dist);
+				break;
+			case 'F': /* For the moment, ignore this */
 				break;
 			default:
 				fprintf(stderr, "Unsupported operation. Exiting...\n");
 				exit(EXIT_FAILURE);
 		}
 	}
-*/
 
+
+/*
 #ifdef DEBUG
-	/* Sanity checks */
+	// Sanity checks
 	uint32_t src[] = { 340279, 1445297, 1151721, 309345, 822018 };
 	uint32_t dest[] = { 519122, 146499, 401121, 696543, 458677 };
 
@@ -292,6 +324,7 @@ int main(void)
 	assert(num_outgoing_edges(g, 16964) == 10031);
 	fprintf(stdout, "Successfully passed all tests\n");
 #endif
+*/
 
 	return 0;
 }
