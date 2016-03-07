@@ -1,6 +1,6 @@
 CC			= gcc
 CFLAGS		= -Wall -Wextra -pedantic -std=c99
-DEBUGFLAGS	= -g -O0 -DDEBUG
+DEBUGFLAGS	= -g -O0 -DDEBUG -pg
 RELEASEFLAGS= -O3
 
 SOURCES		= faf.c

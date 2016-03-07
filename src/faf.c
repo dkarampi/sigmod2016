@@ -4,13 +4,14 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <unistd.h>
 
 #include "khash.h"
 #include "kvec.h"
 
 #define BUF_LEN			128
 #define MAX_V			(1 << 21) /* ~2M vertices */
-#define EDGES_PER_EPAGE	128
+#define EDGES_PER_EPAGE	256
 
 
 typedef	uint32_t vid_t;
@@ -161,26 +162,25 @@ uint32_t num_outgoing_edges(graph_t *g, vid_t v)
 	return num_e;
 }
 
-/* Hashtable: key->int, value->char (ignore this in our case */
-KHASH_MAP_INIT_INT(32, char)
+KHASH_SET_INIT_INT(m32)
 int shortest_path_length(graph_t *g, vid_t src, vid_t dest)
 {
 	/* bfs */
 	if (src == dest)
 		return 0;
-
 	/* 
 	 * OPT:
-	 * - store pointers instead of vids (?)
+	 * - store pointers instead of vids (?) ... How do I go back to vid ?
 	 * - use bitmap instead of hastable (?)
 	 */
-	int ignore, not_visited;
+	int not_visited;
 	kvec_t(vid_t) queue; 
 	kv_init(queue);
 	kv_push(vid_t, queue, src);
 	uint32_t head = 0;	/* head idx */
-	khash_t(32) *h = kh_init(32);
-	kh_put(32, h, src, &ignore); /* ignore the return value as well */
+
+	khash_t(m32) *h = kh_init(m32);
+	kh_put(m32, h, src, &not_visited); /* ignore */
 
 	int dist = 0;
 	while (head < kv_size(queue)) {
@@ -194,19 +194,72 @@ int shortest_path_length(graph_t *g, vid_t src, vid_t dest)
 					uint32_t u = p->vid[k];
 					if (u == dest)
 						return dist;
-					/* Check if node has been visited in past */
-					khiter_t iter = kh_get(32, h, u);
-					not_visited = (iter == kh_end(h));
-					if (not_visited) { /* enqueue and hash */
+					kh_put(m32, h, u, &not_visited);
+					if (not_visited)
 						kv_push(vid_t, queue, u);
-						kh_put(32, h, u, &ignore);
+				}
+			}
+		}
+	}
+
+	kh_destroy(m32, h);
+	kv_destroy(queue);
+	return -1;
+}
+
+#define WORD_BITS (8 * sizeof(unsigned int))
+
+static inline void set_bit(unsigned int * bitmap, size_t idx) {
+    bitmap[idx / WORD_BITS] |= (1 << (idx % WORD_BITS));
+}
+
+static inline bool is_bit_set(unsigned int * bitmap, size_t idx)
+{
+	return !!(bitmap[idx / WORD_BITS] & (1 << (idx % WORD_BITS)));
+}
+
+
+int shortest_path_length_bitmap(graph_t *g, vid_t src, vid_t dest)
+{
+	/* bfs */
+	if (src == dest)
+		return 0;
+	/* 
+	 * OPT:
+	 * - store pointers instead of vids (?) ... How do I go back to vid ?
+	 * - use bitmap instead of hastable (?)
+	 */
+	kvec_t(vid_t) queue; 
+	kv_init(queue);
+	kv_push(vid_t, queue, src);
+	uint32_t head = 0;	/* head idx */
+
+	unsigned int * bitmap = calloc((1 << 21) / 8 + 1, sizeof(unsigned int));
+	set_bit(bitmap, src);
+
+	int dist = 0;
+	while (head < kv_size(queue)) {
+		++dist;
+		uint32_t size = kv_size(queue);
+		for (; head < size; head++) {
+			vid_t v = kv_A(queue, head); /* "dequeue" */
+			/* TODO: implement an iterator over all outgoing edges */
+			for (e_page_t *p = g->v[v]; p != NULL; p = p->next) {
+				for (uint32_t k = 0; k < p->num_e; k++) {
+					uint32_t u = p->vid[k];
+					if (u == dest)
+						return dist;
+
+					if (!is_bit_set(bitmap, u)) { /* not visited */
+						set_bit(bitmap, u);
+						kv_push(vid_t, queue, u);
 					}
 				}
 			}
 		}
 	}
 
-	kh_destroy(32, h);
+	free(bitmap);
 	kv_destroy(queue);
 	return -1;
 }
@@ -235,7 +288,7 @@ void graph_dump(const graph_t * const g, const char *fname)
 int main(void)
 {
 	graph_t *g = graph_create(MAX_V);
-	char buf[BUF_LEN];
+	char buf[128];
 
 	vid_t v1, v2;
 	char *p;
@@ -250,8 +303,17 @@ int main(void)
 		graph_add_edge(g, v1, v2);
     }
 
+/*
+	while ((ssize_t n = read(0, buf, sizeof(buf))) > 0) {
+		;
+		// I need to maintain state between subsequent read()s
+	}
+	return 0;
+*/
+
 	/* Fire up the workload! */
 	fprintf(stdout, "R\n");
+
 	while (fgets(buf, sizeof(buf), stdin) != NULL) {
 		switch (buf[0]) {
 			case 'A':
@@ -270,7 +332,7 @@ int main(void)
 				v1 = strtoul(buf+2, &p, 10);
 				++p;
 				v2 = strtoul(p, NULL, 10);
-				int dist = shortest_path_length(g, v1, v2);
+				int dist = shortest_path_length_bitmap(g, v1, v2);
 				fprintf(stdout, "%d\n", dist);
 				break;
 			case 'F': /* For the moment, ignore this */
