@@ -209,7 +209,8 @@ int shortest_path_length(graph_t *g, vid_t src, vid_t dest)
 
 #define WORD_BITS (8 * sizeof(unsigned int))
 
-static inline void set_bit(unsigned int * bitmap, size_t idx) {
+static inline void set_bit(unsigned int * bitmap, size_t idx)
+{
     bitmap[idx / WORD_BITS] |= (1 << (idx % WORD_BITS));
 }
 
