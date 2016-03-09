@@ -49,6 +49,7 @@ int main() {
 #define AC_KVEC_H
 
 #include <stdlib.h>
+#include <string.h>
 
 #define kv_roundup32(x) (--(x), (x)|=(x)>>1, (x)|=(x)>>2, (x)|=(x)>>4, (x)|=(x)>>8, (x)|=(x)>>16, ++(x))
 
@@ -80,5 +81,11 @@ int main() {
 						   (v).a = (type*)realloc((v).a, sizeof(type) * (v).m), 0) \
 						  : (v).n <= (size_t)(i)? (v).n = (i)			\
 						  : 0), (v).a[(i)]
+
+#define kv_del(type, v, i)	do {									\
+								memmove(&(v).a[(i)], &(v).a[(i)+1],	\
+								((v).n - i) * sizeof(type));		\
+								(v).n--;							\
+							} while (0)
 
 #endif
