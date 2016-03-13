@@ -84,7 +84,7 @@ int main() {
 
 #define kv_del(type, v, i)	do {									\
 								memmove(&(v).a[(i)], &(v).a[(i)+1],	\
-								((v).n - i) * sizeof(type));		\
+								((v).n - i -1) * sizeof(type));		\
 								(v).n--;							\
 							} while (0)
 

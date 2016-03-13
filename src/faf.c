@@ -50,42 +50,46 @@ void graph_destroy(graph_t *g)
 	g = NULL;
 }
 
-void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
+/* 
+ * Lookup for a vertex in a given vector.
+ * return: the position on the vector if found, -1 if not found.
+ */
+int v_lookup(void *p, vid_t v)
 {
-	kvec_t(vid_t) *vec = (void *) g->v[v1]; /* TODO: get rid of casting */
+	kvec_t(vid_t) *vec = p;
 	for (size_t i = 0; i < kv_size(*vec); i++) {
-		if (kv_A(*vec, i) == v2) {
-			fprintf(stdout, "edge %" PRIu32 
-					" --> %" PRIu32 " exists already\n", v1, v2);
-			return;
+		if (kv_A(*vec, i) == v) {
+			return (int)i;
 		}
 	}
+	return -1;
+}
 
+void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
+{
+	kvec_t(vid_t) *vec = (void *)g->v[v1]; /* TODO: get rid of casting */
+	if (v_lookup(vec, v2) >= 0) {
+//		fprintf(stderr, "edge %" PRIu32 
+//				" --> %" PRIu32 " exists already\n", v1, v2);
+		return;
+	}
 	kv_push(vid_t, *vec, v2);
 	g->num_v++;
 }
 
-//void graph_del_edge(graph_t *g, vid_t v1, vid_t v2)
-//{
-//	/* 
-//	 * Current implementation allows pages with 0 edges on them. We don't
-//	 * free() empty pages neither move edges from one page to the other, yet
-//	 * we make sure each page is not fragmented (empty slots)
-//	 */
-//	for (e_page_t *p = g->v[v1]; p != NULL; p = p->next) {
-//		for (uint32_t i = 0; i < p->num_e; i++) {
-//			if (p->vid[i] == v2) {
-//				/* replace the current edge with the last one */
-//				p->vid[i] = p->vid[p->num_e-1];
-//				p->num_e--;
-//				return;
-//			}
-//		}
-//	}
-//
-//	return;
-//}
-//
+void graph_del_edge(graph_t *g, vid_t v1, vid_t v2)
+{
+	kvec_t(vid_t) *vec = (void *)g->v[v1];
+	int idx = v_lookup(vec, v2);
+	if (idx < 0) {
+//		fprintf(stderr, "edge %" PRIu32 
+//				" --> %" PRIu32 " does not exist\n", v1, v2);
+		return;
+	}
+	kv_del(int, *vec, idx);
+	g->num_v--;
+}
+
 ///* For testing */
 //uint32_t num_outgoing_edges(graph_t *g, vid_t v)
 //{
@@ -140,66 +144,66 @@ void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 //	kv_destroy(queue);
 //	return -1;
 //}
-//
-//#define WORD_BITS (8 * sizeof(unsigned int))
-//
-//static inline void set_bit(unsigned int * bitmap, size_t idx)
-//{
-//    bitmap[idx / WORD_BITS] |= (1 << (idx % WORD_BITS));
-//}
-//
-//static inline bool is_bit_set(unsigned int * bitmap, size_t idx)
-//{
-//	return !!(bitmap[idx / WORD_BITS] & (1 << (idx % WORD_BITS)));
-//}
-//
-//
-//int shortest_path_length_bitmap(graph_t *g, vid_t src, vid_t dest)
-//{
-//	/* bfs */
-//	if (src == dest)
-//		return 0;
-//	/* 
-//	 * OPT:
-//	 * - store pointers instead of vids (?) ... How do I go back to vid ?
-//	 * - use bitmap instead of hastable (?)
-//	 */
-//	kvec_t(vid_t) queue; 
-//	kv_init(queue);
-//	kv_push(vid_t, queue, src);
-//	uint32_t head = 0;	/* head idx */
-//
-//	unsigned int * bitmap = calloc((1 << 21) / 8 + 1, sizeof(unsigned int));
-//	set_bit(bitmap, src);
-//
-//	int dist = 0;
-//	while (head < kv_size(queue)) {
-//		++dist;
-//		uint32_t size = kv_size(queue);
-//		for (; head < size; head++) {
-//			vid_t v = kv_A(queue, head); /* "dequeue" */
-//			/* TODO: implement an iterator over all outgoing edges */
-//			for (e_page_t *p = g->v[v]; p != NULL; p = p->next) {
-//				for (uint32_t k = 0; k < p->num_e; k++) {
-//					uint32_t u = p->vid[k];
-//					if (u == dest)
-//						return dist;
-//
-//					if (!is_bit_set(bitmap, u)) { /* not visited */
-//						set_bit(bitmap, u);
-//						kv_push(vid_t, queue, u);
-//					}
-//				}
-//			}
-//		}
-//	}
-//
-//	free(bitmap);
-//	kv_destroy(queue);
-//	return -1;
-//}
-//
-//
+
+#define WORD_BITS (8 * sizeof(unsigned int))
+
+static inline void set_bit(unsigned int * bitmap, size_t idx)
+{
+    bitmap[idx / WORD_BITS] |= (1 << (idx % WORD_BITS));
+}
+
+static inline bool is_bit_set(unsigned int * bitmap, size_t idx)
+{
+	return !!(bitmap[idx / WORD_BITS] & (1 << (idx % WORD_BITS)));
+}
+
+
+int shortest_path_length_bitmap(graph_t *g, vid_t src, vid_t dest)
+{
+	/* bfs */
+	if (src == dest)
+		return 0;
+	/* 
+	 * OPT:
+	 * - store pointers instead of vids (?) ... How do I go back to vid ?
+	 * - use memmove to copy the edge vectors to the queue
+	 * - do not copy edge vectors, use pointers
+	 */
+	kvec_t(vid_t) queue;
+	kv_init(queue);
+	kv_push(vid_t, queue, src);
+	uint32_t head = 0;	/* head idx */
+
+	unsigned int *bitmap = calloc((1 << 21) / 8 + 1, sizeof(unsigned int));
+	set_bit(bitmap, src);
+
+	int dist = 0;
+	while (head < kv_size(queue)) {
+		++dist;
+		uint32_t size = kv_size(queue);
+		for (; head < size; head++) {
+			vid_t v = kv_A(queue, head); /* "dequeue" */
+			kvec_t(vid_t) *vec = (void *) g->v[v];
+//			size_t lala = kv_size(*vec);
+			for (size_t i = 0; i < kv_size(*vec); i++) {
+				vid_t u = kv_A(*vec, i);
+				if (u == dest) {
+					free(bitmap);
+					kv_destroy(queue);
+					return dist;
+				}
+				if (!is_bit_set(bitmap, u)) { /* not visited */
+					set_bit(bitmap, u);
+					kv_push(vid_t, queue, u);
+				}
+			}
+		}
+	}
+	free(bitmap);
+	kv_destroy(queue);
+	return -1;
+}
+
 //void graph_dump(const graph_t * const g, const char *fname)
 //{
 //	FILE *fp;
@@ -218,16 +222,19 @@ void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 //
 //	fclose(fp);
 //}
-//
-//
+
 int main(void)
 {
 	vid_t v1, v2;
-	char *p, buf[128];
+	char *p, buf[256];
 	graph_t *g = graph_create(MAX_V);
 
+
+//	FILE *fp = fopen("init-file.txt", "r");
+
+
 	/* Read the initial graph */
-    while (fgets(buf, sizeof(buf), stdin) != NULL) {
+    while (fgets(buf, sizeof(buf), fp) != NULL) {
 		if (buf[0] == 'S')
 			break;
 		v1 = strtoul(buf, &p, 10);
@@ -236,9 +243,7 @@ int main(void)
 		graph_add_edge(g, v1, v2);
     }
 
-	graph_destroy(g);
-	return 0;
-}
+//	fclose(fp);
 
 ///*
 //	while ((ssize_t n = read(0, buf, sizeof(buf))) > 0) {
@@ -247,40 +252,47 @@ int main(void)
 //	}
 //	return 0;
 //*/
-//
+
 //	/* Fire up the workload! */
-//	fprintf(stdout, "R\n");
-//
-//	while (fgets(buf, sizeof(buf), stdin) != NULL) {
-//		switch (buf[0]) {
-//			case 'A':
-//				v1 = strtoul(buf+2, &p, 10);
-//				++p;
-//				v2 = strtoul(p, NULL, 10);
-//				graph_add_edge(g, v1, v2);	
-//				break;
-//			case 'D':
-//				v1 = strtoul(buf+2, &p, 10);
-//				++p;
-//				v2 = strtoul(p, NULL, 10);
-//				graph_del_edge(g, v1, v2);	
-//				break;
-//			case 'Q':
-//				v1 = strtoul(buf+2, &p, 10);
-//				++p;
-//				v2 = strtoul(p, NULL, 10);
-//				int dist = shortest_path_length_bitmap(g, v1, v2);
-//				fprintf(stdout, "%d\n", dist);
-//				break;
-//			case 'F': /* For the moment, ignore this */
-//				break;
-//			default:
-//				fprintf(stderr, "Unsupported operation. Exiting...\n");
-//				exit(EXIT_FAILURE);
-//		}
-//	}
-//
-//
+	fprintf(stderr, "R\n");
+
+
+//	fp = fopen("1KQtailworkload-file.txt", "r");
+
+	while (fgets(buf, sizeof(buf), fp) != NULL) {
+		switch (buf[0]) {
+			case 'A':
+				v1 = strtoul(buf+2, &p, 10);
+				++p;
+				v2 = strtoul(p, NULL, 10);
+				graph_add_edge(g, v1, v2);	
+				break;
+			case 'D':
+				v1 = strtoul(buf+2, &p, 10);
+				++p;
+				v2 = strtoul(p, NULL, 10);
+				graph_del_edge(g, v1, v2);	
+				break;
+			case 'Q':
+				v1 = strtoul(buf+2, &p, 10);
+				++p;
+				v2 = strtoul(p, NULL, 10);
+				int dist = shortest_path_length_bitmap(g, v1, v2);
+				fprintf(stdout, "%d\n", dist);
+				break;
+			case 'F': /* For the moment, ignore this */
+				break;
+			default:
+				fprintf(stderr, "Unsupported operation. Exiting...\n");
+				exit(EXIT_FAILURE);
+		}
+	}
+
+	graph_destroy(g);
+
+	return 0;
+}
+
 ///*
 //#ifdef DEBUG
 //	// Sanity checks
