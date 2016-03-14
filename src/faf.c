@@ -147,18 +147,18 @@ void graph_del_edge(graph_t *g, vid_t v1, vid_t v2)
 
 #define WORD_BITS (8 * sizeof(unsigned int))
 
-static inline void set_bit(unsigned int * bitmap, size_t idx)
+static inline void set_bit(unsigned int *bitmap, size_t idx)
 {
     bitmap[idx / WORD_BITS] |= (1 << (idx % WORD_BITS));
 }
 
-static inline bool is_bit_set(unsigned int * bitmap, size_t idx)
+static inline bool is_bit_set(unsigned int *bitmap, size_t idx)
 {
 	return !!(bitmap[idx / WORD_BITS] & (1 << (idx % WORD_BITS)));
 }
 
 
-int shortest_path_length_bitmap(graph_t *g, vid_t src, vid_t dest)
+int shortest_path_length_bitmap(graph_t *g, graph_t *ig, vid_t src, vid_t dest)
 {
 	/* bfs */
 	if (src == dest)
@@ -169,38 +169,73 @@ int shortest_path_length_bitmap(graph_t *g, vid_t src, vid_t dest)
 	 * - use memmove to copy the edge vectors to the queue
 	 * - do not copy edge vectors, use pointers
 	 */
-	kvec_t(vid_t) queue;
-	kv_init(queue);
-	kv_push(vid_t, queue, src);
-	uint32_t head = 0;	/* head idx */
+	size_t slen, dlen;
+	uint32_t shead = 0, dhead = 0; /* head idx */
+	kvec_t(vid_t) squeue;
+	kv_init(squeue);
+	kv_push(vid_t, squeue, src);
+	kvec_t(vid_t) dqueue;
+	kv_init(dqueue);
+	kv_push(vid_t, dqueue, dest);
 
-	unsigned int *bitmap = calloc((1 << 21) / 8 + 1, sizeof(unsigned int));
-	set_bit(bitmap, src);
+	unsigned int *svisited = calloc((1 << 21) / 8 + 1, sizeof(unsigned int));
+	set_bit(svisited, src);
+	unsigned int *dvisited = calloc((1 << 21) / 8 + 1, sizeof(unsigned int));
+	set_bit(dvisited, dest);
 
+	/*
+	 * Apply BFS both at src and dest nodes alternately.
+	 * Return when a node has been visited by both expansions.
+	 */
 	int dist = 0;
-	while (head < kv_size(queue)) {
+	while ((slen = kv_size(squeue) - shead) > 0 &&
+			(dlen = kv_size(dqueue) - dhead > 0)) {
 		++dist;
-		uint32_t size = kv_size(queue);
-		for (; head < size; head++) {
-			vid_t v = kv_A(queue, head); /* "dequeue" */
-			kvec_t(vid_t) *vec = (void *) g->v[v];
-//			size_t lala = kv_size(*vec);
+
+		uint32_t *head, size;
+		kvec_t(vid_t) *queue;
+		unsigned int *cvisited = NULL; /* Nodes current exp. has visited */
+		unsigned int *ovisited = NULL; /* Nodes the other exp. has visited */
+		graph_t *t;
+		if (slen <= dlen) { /* Expand from the source side */
+			head = &shead;
+			queue = (void *) &squeue;
+			cvisited = svisited;
+			ovisited = dvisited;
+			t = g;
+		} else {
+			head = &dhead;
+			queue = (void *) &dqueue;
+			cvisited = dvisited;
+			ovisited = svisited;
+			t = ig;
+		}
+		size = kv_size(*queue);
+		for (; *head < size; ++*head) {
+			vid_t v = kv_A(*queue, *head); /* "dequeue" */
+			kvec_t(vid_t) *vec = (void *) t->v[v];
 			for (size_t i = 0; i < kv_size(*vec); i++) {
 				vid_t u = kv_A(*vec, i);
-				if (u == dest) {
-					free(bitmap);
-					kv_destroy(queue);
+				if (is_bit_set(ovisited, u)) {
+					/* Node has been visited by the other expansion as well */
+					free(svisited);
+					free(dvisited);
+					kv_destroy(squeue);
+					kv_destroy(dqueue);
 					return dist;
 				}
-				if (!is_bit_set(bitmap, u)) { /* not visited */
-					set_bit(bitmap, u);
-					kv_push(vid_t, queue, u);
+				if (!is_bit_set(cvisited, u)) { /* not visited */
+					set_bit(cvisited, u);
+					kv_push(vid_t, *queue, u);
 				}
 			}
 		}
 	}
-	free(bitmap);
-	kv_destroy(queue);
+
+	free(svisited);
+	free(dvisited);
+	kv_destroy(squeue);
+	kv_destroy(dqueue);
 	return -1;
 }
 
@@ -228,9 +263,10 @@ int main(void)
 	vid_t v1, v2;
 	char *p, buf[256];
 	graph_t *g = graph_create(MAX_V);
+	graph_t *ig = graph_create(MAX_V); /* inverse graph */
 
 
-//	FILE *fp = fopen("init-file.txt", "r");
+	FILE *fp = fopen("init-file.txt", "r");
 
 
 	/* Read the initial graph */
@@ -241,9 +277,10 @@ int main(void)
 		++p;
 		v2 = strtoul(p, NULL, 10);
 		graph_add_edge(g, v1, v2);
+		graph_add_edge(ig, v2, v1);
     }
 
-//	fclose(fp);
+	fclose(fp);
 
 ///*
 //	while ((ssize_t n = read(0, buf, sizeof(buf))) > 0) {
@@ -257,7 +294,7 @@ int main(void)
 	fprintf(stderr, "R\n");
 
 
-//	fp = fopen("1KQtailworkload-file.txt", "r");
+	fp = fopen("1KQtailworkload-file.txt", "r");
 
 	while (fgets(buf, sizeof(buf), fp) != NULL) {
 		switch (buf[0]) {
@@ -265,19 +302,22 @@ int main(void)
 				v1 = strtoul(buf+2, &p, 10);
 				++p;
 				v2 = strtoul(p, NULL, 10);
-				graph_add_edge(g, v1, v2);	
+				graph_add_edge(g, v1, v2);
+				/* OPT: avoid look up both edge vectors when v1 -> v2 exists already */
+				graph_add_edge(ig, v2, v1);
 				break;
 			case 'D':
 				v1 = strtoul(buf+2, &p, 10);
 				++p;
 				v2 = strtoul(p, NULL, 10);
-				graph_del_edge(g, v1, v2);	
+				graph_del_edge(g, v1, v2);
+				graph_del_edge(ig, v2, v1);
 				break;
 			case 'Q':
 				v1 = strtoul(buf+2, &p, 10);
 				++p;
 				v2 = strtoul(p, NULL, 10);
-				int dist = shortest_path_length_bitmap(g, v1, v2);
+				int dist = shortest_path_length_bitmap(g, ig, v1, v2);
 				fprintf(stdout, "%d\n", dist);
 				break;
 			case 'F': /* For the moment, ignore this */
@@ -289,6 +329,7 @@ int main(void)
 	}
 
 	graph_destroy(g);
+	graph_destroy(ig);
 
 	return 0;
 }
