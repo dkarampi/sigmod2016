@@ -39,16 +39,14 @@ graph_t * graph_create(const int n)
 	return g;
 }
 
-/* XXX: valgrind said there is a memory leak */
 void graph_destroy(graph_t *g)
 {
 	for (int i = 0; i < MAX_V; i++) {
 		kv_destroy(*(g->v[i]));
 		free(g->v[i]);
-		g->v[i] = NULL; 
 	}
+	free(g->v);
 	free(g);
-	g = NULL;
 }
 
 /* 
@@ -157,7 +155,6 @@ static inline bool is_bit_set(unsigned int *bitmap, size_t idx)
 {
 	return !!(bitmap[idx / WORD_BITS] & (1 << (idx % WORD_BITS)));
 }
-
 
 int shortest_path_length_bitmap(graph_t *g, graph_t *ig, vid_t src, vid_t dest)
 {
