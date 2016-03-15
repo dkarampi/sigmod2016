@@ -1,7 +1,7 @@
 CC			= gcc
 CFLAGS		= -Wall -Wextra -pedantic -std=c99
-DEBUGFLAGS	= -g -O0 -DDEBUG -pg
-RELEASEFLAGS= -O3
+DEBUGFLAGS	= -g -O0 -DDEBUG
+RELEASEFLAGS= -O3 -g
 
 SOURCES		= faf.c
 OBJECTS		= $(SOURCES:.c=.o)

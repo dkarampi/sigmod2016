@@ -18,7 +18,7 @@ typedef	uint32_t vid_t;
 typedef struct graph
 {
 	int num_v;
-	kvec_t(vid_t) **v; /* Each vertex points to a set of (outgoing) edges. */
+	kvec_t **v; /* Each vertex points to a set of (outgoing) edges. */
 } graph_t;
 
 graph_t * graph_create(const int n)
@@ -28,17 +28,18 @@ graph_t * graph_create(const int n)
 		perror("malloc");
 		exit(EXIT_FAILURE);
 	}
-	if ((g->v = malloc(n * sizeof(kvec_t(vid_t) *))) == NULL) {
+	if ((g->v = malloc(n * sizeof(kvec_t *))) == NULL) {
 		perror("malloc");
 		exit(EXIT_FAILURE);
 	}
 	for (int i = 0; i < n; i++) { /* TODO: calloc ? */
-		g->v[i] = malloc(sizeof(kvec_t(vid_t)));
+		g->v[i] = malloc(sizeof(kvec_t));
 		kv_init(*(g->v[i])); 
 	}
 	return g;
 }
 
+/* XXX: valgrind said there is a memory leak */
 void graph_destroy(graph_t *g)
 {
 	for (int i = 0; i < MAX_V; i++) {
@@ -56,7 +57,7 @@ void graph_destroy(graph_t *g)
  */
 int v_lookup(void *p, vid_t v)
 {
-	kvec_t(vid_t) *vec = p;
+	kvec_t *vec = p;
 	for (size_t i = 0; i < kv_size(*vec); i++) {
 		if (kv_A(*vec, i) == v) {
 			return (int)i;
@@ -67,7 +68,7 @@ int v_lookup(void *p, vid_t v)
 
 void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 {
-	kvec_t(vid_t) *vec = (void *)g->v[v1]; /* TODO: get rid of casting */
+	kvec_t *vec = (void *)g->v[v1]; /* TODO: get rid of casting */
 	if (v_lookup(vec, v2) >= 0) {
 //		fprintf(stderr, "edge %" PRIu32 
 //				" --> %" PRIu32 " exists already\n", v1, v2);
@@ -79,7 +80,7 @@ void graph_add_edge(graph_t *g, vid_t v1, vid_t v2)
 
 void graph_del_edge(graph_t *g, vid_t v1, vid_t v2)
 {
-	kvec_t(vid_t) *vec = (void *)g->v[v1];
+	kvec_t *vec = (void *)g->v[v1];
 	int idx = v_lookup(vec, v2);
 	if (idx < 0) {
 //		fprintf(stderr, "edge %" PRIu32 
@@ -163,6 +164,7 @@ int shortest_path_length_bitmap(graph_t *g, graph_t *ig, vid_t src, vid_t dest)
 	/* bfs */
 	if (src == dest)
 		return 0;
+
 	/* 
 	 * OPT:
 	 * - store pointers instead of vids (?) ... How do I go back to vid ?
@@ -171,10 +173,10 @@ int shortest_path_length_bitmap(graph_t *g, graph_t *ig, vid_t src, vid_t dest)
 	 */
 	size_t slen, dlen;
 	uint32_t shead = 0, dhead = 0; /* head idx */
-	kvec_t(vid_t) squeue;
+	kvec_t squeue;
 	kv_init(squeue);
 	kv_push(vid_t, squeue, src);
-	kvec_t(vid_t) dqueue;
+	kvec_t dqueue;
 	kv_init(dqueue);
 	kv_push(vid_t, dqueue, dest);
 
@@ -193,19 +195,19 @@ int shortest_path_length_bitmap(graph_t *g, graph_t *ig, vid_t src, vid_t dest)
 		++dist;
 
 		uint32_t *head, size;
-		kvec_t(vid_t) *queue;
+		kvec_t *queue;
 		unsigned int *cvisited = NULL; /* Nodes current exp. has visited */
 		unsigned int *ovisited = NULL; /* Nodes the other exp. has visited */
 		graph_t *t;
 		if (slen <= dlen) { /* Expand from the source side */
 			head = &shead;
-			queue = (void *) &squeue;
+			queue = &squeue;
 			cvisited = svisited;
 			ovisited = dvisited;
 			t = g;
 		} else {
 			head = &dhead;
-			queue = (void *) &dqueue;
+			queue = &dqueue;
 			cvisited = dvisited;
 			ovisited = svisited;
 			t = ig;
@@ -213,7 +215,7 @@ int shortest_path_length_bitmap(graph_t *g, graph_t *ig, vid_t src, vid_t dest)
 		size = kv_size(*queue);
 		for (; *head < size; ++*head) {
 			vid_t v = kv_A(*queue, *head); /* "dequeue" */
-			kvec_t(vid_t) *vec = (void *) t->v[v];
+			kvec_t *vec = (void *) t->v[v];
 			for (size_t i = 0; i < kv_size(*vec); i++) {
 				vid_t u = kv_A(*vec, i);
 				if (is_bit_set(ovisited, u)) {
@@ -230,11 +232,23 @@ int shortest_path_length_bitmap(graph_t *g, graph_t *ig, vid_t src, vid_t dest)
 				}
 			}
 		}
+		/* 
+		 * This is crucial and has been the source of a nasty bug.
+		 * realloc might have changed the initial pointer value. 
+		 * Depending our initial branch we should reset the queues.
+		 */
+		if (slen <= dlen)
+			squeue = *queue;
+		else
+			dqueue = *queue;
 	}
+
 
 	free(svisited);
 	free(dvisited);
+//	fprintf(stderr, "squeue: %p\n", (void *) &squeue);
 	kv_destroy(squeue);
+//	fprintf(stderr, "dqueue: %p\n", (void *) &dqueue);
 	kv_destroy(dqueue);
 	return -1;
 }
@@ -266,8 +280,7 @@ int main(void)
 	graph_t *ig = graph_create(MAX_V); /* inverse graph */
 
 
-	FILE *fp = fopen("init-file.txt", "r");
-
+	FILE *fp = fopen("/dev/shm/init-file.txt", "r");
 
 	/* Read the initial graph */
     while (fgets(buf, sizeof(buf), fp) != NULL) {
@@ -294,7 +307,8 @@ int main(void)
 	fprintf(stderr, "R\n");
 
 
-	fp = fopen("1KQtailworkload-file.txt", "r");
+	// fp = fopen("555Qheadworkload-file.txt", "r");
+	fp = fopen("/dev/shm/workload-file.txt.orig", "r");
 
 	while (fgets(buf, sizeof(buf), fp) != NULL) {
 		switch (buf[0]) {
@@ -327,6 +341,8 @@ int main(void)
 				exit(EXIT_FAILURE);
 		}
 	}
+
+	fclose(fp);
 
 	graph_destroy(g);
 	graph_destroy(ig);
