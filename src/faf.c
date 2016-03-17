@@ -98,11 +98,6 @@ int shortest_path_length_bitmap(graph_t *g, graph_t *ig, vid_t src, vid_t dest)
 	kv_init(dqueue);
 	kv_push(vid_t, dqueue, dest);
 
-	unsigned int *svisited = calloc((1 << 21) / 8 + 1, sizeof(unsigned int));
-	set_bit(svisited, src);
-	unsigned int *dvisited = calloc((1 << 21) / 8 + 1, sizeof(unsigned int));
-	set_bit(dvisited, dest);
-
 	/*
 	 * Apply BFS both at src and dest nodes alternately.
 	 * Return when a node has been visited by both expansions.
@@ -114,20 +109,17 @@ int shortest_path_length_bitmap(graph_t *g, graph_t *ig, vid_t src, vid_t dest)
 
 		uint32_t *head, size;
 		kvec_t *queue;
-		unsigned int *cvisited = NULL; /* Nodes current exp. has visited */
-		unsigned int *ovisited = NULL; /* Nodes the other exp. has visited */
+		kvec_t *oqueue;
 		graph_t *t;
 		if (slen <= dlen) { /* Expand from the source side */
 			head = &shead;
 			queue = &squeue;
-			cvisited = svisited;
-			ovisited = dvisited;
+			oqueue = &dqueue;
 			t = g;
 		} else {
 			head = &dhead;
 			queue = &dqueue;
-			cvisited = dvisited;
-			ovisited = svisited;
+			oqueue = &squeue;
 			t = ig;
 		}
 		size = kv_size(*queue);
@@ -138,18 +130,18 @@ int shortest_path_length_bitmap(graph_t *g, graph_t *ig, vid_t src, vid_t dest)
 				if (!kh_exist(h, k))
 					continue;
 				vid_t u = kh_key(h, k);
-				if (is_bit_set(ovisited, u)) {
-					/* Node has been visited by the other expansion as well */
-					free(svisited);
-					free(dvisited);
-					kv_destroy(squeue);
-					kv_destroy(dqueue);
-					return dist;
+				for (uint32_t i = 0; i < kv_size(*oqueue); i++) {
+					if (kv_A(*oqueue, i) == u) {
+						kv_destroy(squeue);
+						kv_destroy(dqueue);
+						return dist;
+					}
 				}
-				if (!is_bit_set(cvisited, u)) { /* not visited */
-					set_bit(cvisited, u);
-					kv_push(vid_t, *queue, u);
-				}
+				for (uint32_t i = 0; i < size; i++)
+					if (kv_A(*queue, i) == u)
+						goto NEXT;
+				kv_push(vid_t, *queue, u);
+NEXT: ;
 			}
 		}
 		/* 
@@ -163,12 +155,7 @@ int shortest_path_length_bitmap(graph_t *g, graph_t *ig, vid_t src, vid_t dest)
 			dqueue = *queue;
 	}
 
-
-	free(svisited);
-	free(dvisited);
-//	fprintf(stderr, "squeue: %p\n", (void *) &squeue);
 	kv_destroy(squeue);
-//	fprintf(stderr, "dqueue: %p\n", (void *) &dqueue);
 	kv_destroy(dqueue);
 	return -1;
 }
