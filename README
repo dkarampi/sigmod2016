@@ -1,3 +1,6 @@
+SIGMOD 2016 Programming Contest
+http://dsg.uwaterloo.ca/sigmod16contest/task.shtml
+
 This is a naive implementation that builds a graph along with its complementary
 counterpart and executes an improved version of BFS for every distance query.
 
