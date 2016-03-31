@@ -1,0 +1,51 @@
+This is a naive implementation that builds a graph along with its complementary
+counterpart and executes an improved version of BFS for every distance query.
+
+I've experimented with vectors vs hashtables in various cases, yet there wasn't
+much of difference.
+
+Judging from the execution time on the leaderboard, some indexing is required.
+
+Most of the queries in the workload return -1, meaning there is no path connecting
+the given nodes, so I my initial thought was to check for reachability first and
+execute BFS to find the actual distance only if the answer to this question is
+positive.
+
+Here is the first good reference I found on reachability between nodes for
+directed graphs that change over time:
+http://code-o-matic.blogspot.ch/2010/07/graph-reachability-transitive-closures.html
+and here is some code in Java:
+https://github.com/DimitrisAndreou/transitivity-utils
+Note, there is no delete operation implemented but the real problem is that the
+approach is applied on DAGs (same goes for all the papers that follow). We can
+convert a graph to a DAG (essentially by using "hyper-nodes" to represent strongly
+connected components) with Tarjan's or Kosaraju's algorithms, but mainaining DAG
+properties under a dynamic enviroment (with inserts and updates) is hard (tbh,
+I didn't investigate this further).
+
+Liam Roditty and Uri Zwick have also published related work on this in theory
+conferences. The crux here though is that the algorithms are not easy to implement
+and I'm almost sure that they do not scale well either. Their primary goal is to
+achieve lower complexity bounds and thus, understanding them can be tricky.
+
+From Database conferences the following papers are relevant:
+	a) GRAIL: Scalable Reachability Index for Large Graphs
+and
+	b) Reachability Queries in Very Large Graphs: A Fast Refined Online Search Approach
+Research here is conducted only on static graphs, thus these might not be the best
+candidates, but there are some good ideas and interesting follow-up papers.
+
+At this point I started thinking that my initial idea on checking for reachability
+first might be not the best approach. There is some work for indexing shortest-path
+distance quries like:
+	a) Dynamic and Historical Shortest-Path Distance Queries on Large Evolving
+	Networks by Pruned Landmark Labeling
+and
+	b) TopCom: Index for Shortest Distance Query in Directed Graph
+but I didn't investigate it further.
+
+Bottomline:
+1) The assumtion that the graph must be DAG in order to apply algorithms related
+to reachability queries, was hard to deal with in dynamic environments.
+2) I might need to focus on indexing shortest-path distances instead.
+3) There is a shitload of research on graphs problems and variations of them.
